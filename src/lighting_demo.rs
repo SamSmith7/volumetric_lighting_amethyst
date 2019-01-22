@@ -82,15 +82,29 @@ fn create_body(world: &mut World, sheet: &SpriteSheetHandle, index: usize, x: f3
         .build();
 }
 
+fn create_light(world: &mut World, x: f32, y: f32) {
+
+    let mut transform = Transform::default();
+    transform.set_xyz(x, y, 0.0);
+
+    let light = Light2D::default();
+
+    world.create_entity()
+        .with(transform)
+        .with(light)
+        .build();
+}
+
 fn init_bodies(world: &mut World) {
 
     let bodies_sprites = load_sprite_sheet(world, "textures/bodies.png", "textures/bodies_spritesheet.ron");
-    println!("[USER_DEBUG] CALL INIT BODIES !@!@!@");
 
     let body1_collider_points = vec![(50.0, 100.0), (300.0, 50.0), (350.0, 200.0), (75.0, 150.0)];
     create_body(world, &bodies_sprites, 0, 30.0, 30.0, body1_collider_points);
     let body2_collider_points = vec![(75.0, 350.0), (225.0, 25.0), (350.0, 200.0), (200.0, 200.0)];
     create_body(world, &bodies_sprites, 1, 70.0, 70.0, body2_collider_points);
+
+    create_light(world, 90.0, 90.0);
 }
 
 impl SimpleState for LightingDemo {
@@ -108,7 +122,10 @@ impl SimpleState for LightingDemo {
 
 #[derive(Debug)]
 pub enum Collider2DShape {
-    Polygon(Vec<Vector3<f32>>),
+    Polygon {
+        internal_rays: Vec<(Vector3<f32>, Vector3<f32>)>,
+        vertices: Vec<Vector3<f32>>
+    },
     Circle(Vector3<f32>, i32),
     Default
 }
@@ -125,8 +142,49 @@ impl Collider2D {
             .map(|(x, y)| { Vector3::new(x, y, 0.5) })
             .collect();
 
-        self.shape = Collider2DShape::Polygon(parsed_points);
-        self
+        let len = parsed_points.len();
+        let mut rays: Vec<(Vector3<f32>, Vector3<f32>)> = vec![];
+
+        for (idx, point1) in parsed_points.iter().enumerate() {
+
+            let adjusted_idx = idx + len;
+
+            for (inner_idx, point2) in parsed_points.iter().enumerate() {
+
+                if ((adjusted_idx % len) == inner_idx || (adjusted_idx + 1) % len == inner_idx || (adjusted_idx - 1) % len == inner_idx) {
+                    continue;
+                }
+
+                match rays.iter().find(|(pt1, pt2)| { pt1 == point2 && pt2 == point1 }) {
+                    Some(_) => continue,
+                    None => rays.push((*point1, *point2))
+                };
+            }
+        }
+
+        self.shape = Collider2DShape::Polygon {
+            internal_rays: rays,
+            vertices: parsed_points
+        };
+        dbg!(self)
+    }
+
+    pub fn ray_traverses_body(&self, ray: (Vector3<f32>, Vector3<f32>)) -> bool {
+
+        match self.type {
+            Collider2DShape::Polygon { internal_rays } => {
+
+                let mut count = 0;
+
+                for internal_ray in internal_rays.iter() {
+                    if do_lines_intersect(ray, internal_ray) {
+                        count++;
+                    }
+                }
+
+                count > 1
+            }
+        }
     }
 }
 
@@ -140,4 +198,27 @@ impl Default for Collider2D {
 
 impl Component for Collider2D {
     type Storage = DenseVecStorage<Self>;
+}
+
+
+#[derive(Debug)]
+pub struct Light2D {
+    falloff: f32,
+}
+
+impl Default for Light2D {
+    fn default() -> Self {
+        Light2D {
+            falloff: 50.0
+        }
+    }
+}
+
+impl Component for Light2D {
+    type Storage = DenseVecStorage<Self>;
+}
+
+
+fn do_lines_intersect(line1: (Vector3<f32>, Vector3<f32>), line2: (Vector3<f32>, Vector3<f32>)) -> bool {
+    // check if lines interest https://github.com/pgkelley4/line-segments-intersect/blob/master/js/line-segments-intersect.js
 }
