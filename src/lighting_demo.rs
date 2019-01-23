@@ -2,7 +2,7 @@ use amethyst::{
     assets::{ AssetStorage, Loader },
     core::{
         transform::Transform,
-        nalgebra::Vector3,
+        nalgebra::{ Vector2, Vector3 },
     },
     ecs::prelude::{ Component, DenseVecStorage },
     prelude::*,
@@ -151,7 +151,7 @@ impl Collider2D {
 
             for (inner_idx, point2) in parsed_points.iter().enumerate() {
 
-                if ((adjusted_idx % len) == inner_idx || (adjusted_idx + 1) % len == inner_idx || (adjusted_idx - 1) % len == inner_idx) {
+                if (adjusted_idx % len) == inner_idx || (adjusted_idx + 1) % len == inner_idx || (adjusted_idx - 1) % len == inner_idx {
                     continue;
                 }
 
@@ -171,18 +171,24 @@ impl Collider2D {
 
     pub fn ray_traverses_body(&self, ray: (Vector3<f32>, Vector3<f32>)) -> bool {
 
-        match self.type {
-            Collider2DShape::Polygon { internal_rays } => {
+        match &self.shape {
+            Collider2DShape::Polygon { internal_rays, vertices } => {
 
                 let mut count = 0;
 
                 for internal_ray in internal_rays.iter() {
-                    if do_lines_intersect(ray, internal_ray) {
-                        count++;
+                    if do_lines_intersect(&ray, internal_ray) {
+                        count = count + 1;
                     }
                 }
 
                 count > 1
+            },
+            Collider2DShape::Circle(center, radius) => {
+                false
+            },
+            Collider2DShape::Default => {
+                false
             }
         }
     }
@@ -218,7 +224,56 @@ impl Component for Light2D {
     type Storage = DenseVecStorage<Self>;
 }
 
+fn overlap(p: Vector2<f32>, p2: Vector2<f32>, q: Vector2<f32>, q2: Vector2<f32>) -> bool {
 
-fn do_lines_intersect(line1: (Vector3<f32>, Vector3<f32>), line2: (Vector3<f32>, Vector3<f32>)) -> bool {
-    // check if lines interest https://github.com/pgkelley4/line-segments-intersect/blob/master/js/line-segments-intersect.js
+    let start_x = q.x - p.x < 0.0;
+    let x = [
+        q.x - p2.x < 0.0,
+        q2.x - p.x < 0.0,
+        q2.x - p2.x < 0.0,
+    ];
+
+    let start_y = q.y - p.y < 0.0;
+    let y = [
+        q.y - p2.y < 0.0,
+        q2.y - p.y < 0.0,
+        q2.y - p2.y < 0.0,
+    ];
+
+    let x_all = x.iter().fold(true, |acc, x| { acc && *x == start_x });
+    let y_all = y.iter().fold(true, |acc, y| { acc && *y == start_y });
+
+    !x_all || !y_all
+}
+
+fn do_lines_intersect(line1: &(Vector3<f32>, Vector3<f32>), line2: &(Vector3<f32>, Vector3<f32>)) -> bool {
+
+    let p = line1.0.xy();
+    let p2 = line1.1.xy();
+    let q = line2.0.xy();
+    let q2 = line2.1.xy();
+
+    let r = p2 - p;
+    let s = q2 - q;
+
+    let uNumerator = (q - p).perp(&r);
+    let denominator = r.perp(&s);
+
+    if uNumerator == 0.0 && denominator == 0.0 {
+
+        if p == q || p == q2 || p2 == q || p2 == q2 {
+            return true;
+        }
+
+        return overlap(p, p2, q, q2);
+    }
+
+    if denominator == 0.0 {
+        return false;
+    }
+
+    let u = uNumerator / denominator;
+    let t = (q - p).perp(&s) / denominator;
+
+    (t >= 0.0) && (t <= 1.0) && (u >= 0.0) && (u <= 1.0)
 }
