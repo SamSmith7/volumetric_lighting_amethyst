@@ -1,5 +1,8 @@
 use amethyst::{
-    core::transform::Transform,
+    core::{
+        nalgebra::{ Vector3 },
+        transform::Transform
+    },
     ecs::prelude::{Join, ReadStorage, System, WriteStorage},
 };
 
@@ -19,18 +22,22 @@ impl<'s> System<'s> for VolumetricLightsSystem {
     fn run(&mut self, (colliders, lights, transforms): Self::SystemData) {
 
         let mut scene_lights = vec![];
+        let vertical: Vector3<f32> = Vector3::new(0.0, 1.0, 0.5);
 
-        for (_, transform) in (&lights, &transforms).join() {
-            scene_lights.push(transform);
+        for (light, transform) in (&lights, &transforms).join() {
+            scene_lights.push((light, transform));
         }
 
         for (collider, local) in (&colliders, &transforms).join() {
             // println!("{:?}", collider.shape);
 
             // loop over lights and cast rays to all the corners.
-            // for light in scene_lights {
-            //
-            // }
+            for (light, transform) in scene_lights.iter() {
+
+                let points = collider.get_exposed_verticies(transform.translation(), light.falloff);
+
+                println!("{:?}", points);
+            }
         }
     }
 }

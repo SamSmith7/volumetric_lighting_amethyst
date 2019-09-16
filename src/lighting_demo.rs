@@ -2,7 +2,7 @@ use amethyst::{
     assets::{ AssetStorage, Loader },
     core::{
         transform::Transform,
-        nalgebra::{ Vector2, Vector3 },
+        nalgebra::{ distance, Point3, Vector2, Vector3 },
     },
     ecs::prelude::{ Component, DenseVecStorage },
     prelude::*,
@@ -98,10 +98,10 @@ fn create_light(world: &mut World, x: f32, y: f32) {
 fn init_bodies(world: &mut World) {
 
     let bodies_sprites = load_sprite_sheet(world, "textures/bodies.png", "textures/bodies_spritesheet.ron");
-
-    let body1_collider_points = vec![(50.0, 100.0), (300.0, 50.0), (350.0, 200.0), (75.0, 150.0)];
+    40 x 25 -> 20 x 12.5
+    let body1_collider_points = vec![(-15.0, -2.5), (10.0, 7.5), (15.0, 7.5), (12.5, 2.5)];
     create_body(world, &bodies_sprites, 0, 30.0, 30.0, body1_collider_points);
-    let body2_collider_points = vec![(75.0, 350.0), (225.0, 25.0), (350.0, 200.0), (200.0, 200.0)];
+    let body2_collider_points = vec![(-12.5, 15.0), (2.5, -10), (15.0, 7.5), (0.0, 7.5)];
     create_body(world, &bodies_sprites, 1, 70.0, 70.0, body2_collider_points);
 
     create_light(world, 90.0, 90.0);
@@ -124,7 +124,7 @@ impl SimpleState for LightingDemo {
 pub enum Collider2DShape {
     Polygon {
         internal_rays: Vec<(Vector3<f32>, Vector3<f32>)>,
-        vertices: Vec<Vector3<f32>>
+        verticies: Vec<Vector3<f32>>
     },
     Circle(Vector3<f32>, i32),
     Default
@@ -132,10 +132,12 @@ pub enum Collider2DShape {
 
 #[derive(Debug)]
 pub struct Collider2D {
-    pub shape: Collider2DShape
+    pub scale: Vector3<f32>,
+    pub shape: Collider2DShape,
 }
 
 impl Collider2D {
+
     pub fn set_polygon(&mut self, points: Vec<(f32, f32)>) -> &mut Self {
 
         let parsed_points: Vec<Vector3<f32>> = points.into_iter()
@@ -164,31 +166,39 @@ impl Collider2D {
 
         self.shape = Collider2DShape::Polygon {
             internal_rays: rays,
-            vertices: parsed_points
+            verticies: parsed_points
         };
         dbg!(self)
     }
 
-    pub fn ray_traverses_body(&self, ray: (Vector3<f32>, Vector3<f32>)) -> bool {
+    pub fn get_exposed_verticies(&self, point: &Vector3<f32>, falloff: f32) -> Vec<Vector3<f32>> {
 
         match &self.shape {
-            Collider2DShape::Polygon { internal_rays, vertices } => {
+            Collider2DShape::Polygon { internal_rays, verticies } => {
 
-                let mut count = 0;
+                let mut res = vec![];
 
-                for internal_ray in internal_rays.iter() {
-                    if do_lines_intersect(&ray, internal_ray) {
-                        count = count + 1;
+                for vertex in verticies {
+
+                    let v = Point3::from_coordinates(*vertex);
+                    let p = Point3::from_coordinates(*point);
+
+                    if dbg!(distance(&v, &p)) > falloff {
+                        continue;
+                    }
+
+                    if !ray_traverses_body((*point, *vertex), internal_rays) {
+                        res.push(*vertex);
                     }
                 }
 
-                count > 1
+                res
             },
             Collider2DShape::Circle(center, radius) => {
-                false
+                vec![]
             },
             Collider2DShape::Default => {
-                false
+                vec![]
             }
         }
     }
@@ -197,7 +207,8 @@ impl Collider2D {
 impl Default for Collider2D {
     fn default() -> Self {
         Collider2D {
-            shape: Collider2DShape::Default
+            scale: Vector3::new(1.0, 1.0, 1.0),
+            shape: Collider2DShape::Default,
         }
     }
 }
@@ -209,13 +220,13 @@ impl Component for Collider2D {
 
 #[derive(Debug)]
 pub struct Light2D {
-    falloff: f32,
+    pub falloff: f32,
 }
 
 impl Default for Light2D {
     fn default() -> Self {
         Light2D {
-            falloff: 50.0
+            falloff: 100.0
         }
     }
 }
@@ -256,10 +267,10 @@ fn do_lines_intersect(line1: &(Vector3<f32>, Vector3<f32>), line2: &(Vector3<f32
     let r = p2 - p;
     let s = q2 - q;
 
-    let uNumerator = (q - p).perp(&r);
+    let u_numerator = (q - p).perp(&r);
     let denominator = r.perp(&s);
 
-    if uNumerator == 0.0 && denominator == 0.0 {
+    if u_numerator == 0.0 && denominator == 0.0 {
 
         if p == q || p == q2 || p2 == q || p2 == q2 {
             return true;
@@ -272,8 +283,21 @@ fn do_lines_intersect(line1: &(Vector3<f32>, Vector3<f32>), line2: &(Vector3<f32
         return false;
     }
 
-    let u = uNumerator / denominator;
+    let u = u_numerator / denominator;
     let t = (q - p).perp(&s) / denominator;
 
     (t >= 0.0) && (t <= 1.0) && (u >= 0.0) && (u <= 1.0)
+}
+
+fn ray_traverses_body(ray: (Vector3<f32>, Vector3<f32>), internal_rays: &Vec<(Vector3<f32>, Vector3<f32>)>) -> bool {
+
+    let mut count = 0;
+
+    for internal_ray in internal_rays.iter() {
+        if do_lines_intersect(&ray, internal_ray) {
+            count = count + 1;
+        }
+    }
+
+    count > 1
 }
